@@ -23,7 +23,6 @@ from langchain_text_splitters import RecursiveCharacterTextSplitter
 from qdrant_client import QdrantClient
 from langchain_qdrant import Qdrant, QdrantVectorStore
 
-
 app = FastAPI()
 
 os.environ["OPENAI_API_KEY"] = "sk-5bfb31a9765849beb9c8068fbb24e933"
@@ -228,19 +227,3 @@ def add_urls(url: str):
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-    # embeddings_model = OpenAIEmbeddings(model="text-embedding-v3", check_embedding_ctx_length=False)
-    # embeddings = embeddings_model.embed_documents([
-    #     "Hi there!",
-    #     "Oh, hello!",
-    #     "What's your name?",
-    #     "My friends call me World",
-    #     "Hello World!"
-    # ])
-    # query = "什么是人工智能？"
-    # embedding = embeddings_model.embed_query(query)
-    # print(f"Query Embedding: {embedding}")
-
-
-
-
-# docker run -p 6333:6333 -p 6334:6334 -v "F:/qdrant-data:/qdrant/storage:z" qdrant/qdrant
