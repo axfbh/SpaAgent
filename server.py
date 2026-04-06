@@ -3,14 +3,13 @@ import os
 from fastapi import FastAPI
 import uvicorn
 
-from langchain_openai import ChatOpenAI
+from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain.agents import create_agent
 from langchain_core.prompts import ChatPromptTemplate
 from langchain_core.output_parsers import StrOutputParser
 from langchain.tools import tool
 from langchain_community.utilities import SerpAPIWrapper
-from langgraph.checkpoint.memory import InMemorySaver
-from langgraph.checkpoint.redis import RedisSaver # pip install langgraph-checkpoint-redis
+from langgraph.checkpoint.redis import RedisSaver
 from langchain.agents.middleware import before_model
 from langchain.messages import trim_messages
 from langchain.messages import RemoveMessage
@@ -18,6 +17,12 @@ from langgraph.runtime import Runtime
 from langchain.agents import create_agent, AgentState
 from typing import Any
 from langgraph.graph.message import REMOVE_ALL_MESSAGES
+from langchain_community.document_loaders import WebBaseLoader
+from langchain_text_splitters import RecursiveCharacterTextSplitter
+# from langchain_community.vectorstores import Qdrant
+from qdrant_client import QdrantClient
+from langchain_qdrant import Qdrant, QdrantVectorStore
+
 
 app = FastAPI()
 
@@ -39,7 +44,7 @@ def trim_messages_agent(state: AgentState, runtime: Runtime) -> dict[str, Any] |
 
     # 自己写的功能
     messages = state["messages"]
-    print(messages)
+
     if len(messages) <= 3:
         return None
     
@@ -53,11 +58,30 @@ def trim_messages_agent(state: AgentState, runtime: Runtime) -> dict[str, Any] |
         ]
     }
 
+@tool
+def get_info_from_local_db(query: str):
+    """
+    只有回答与运势相关的问题的时候才会使用这个工具，从本地数据库中获取信息。
+    参数：
+        query: 用户的问题
+    返回：
+        result: 本地数据库中的信息
+    """
+    client = QdrantVectorStore(
+        QdrantClient(path="/home/cgm/model/SpaAgent/local_qdrant"),
+        collection_name="SpaDocuments",
+        embedding=OpenAIEmbeddings(model="text-embedding-v3", check_embedding_ctx_length=False),
+    )
+    
+    retriever = client.as_retriever(search_type="mmr")
+    results = retriever._get_relevant_documents(query, run_manager=None)
+    print("本地数据库中的信息: ", results)
+    return results
 
 @tool
 def search(query: str):
     """
-    只有需要了解实时信息或不知道的事情的时候才会使用搜索引擎搜索用户的问题，并返回搜索结果。
+    只有需要了解实时信息或不知道的事情的时候，且不能关于运势的问题的时候才会使用搜索引擎搜索用户的问题，并返回搜索结果。
     参数：
         query: 用户的问题
     返回：
@@ -69,7 +93,7 @@ def search(query: str):
     return result
 
 class Master:
-    def __init__(self, user_id="user_001") -> None:
+    def __init__(self, user_id="user_4222") -> None:
         self.user_id = user_id
         self.chatmodel = ChatOpenAI(
             model="qwen-plus",
@@ -139,7 +163,7 @@ class Master:
             checkpointer.setup()
             self.agent = create_agent(
                 model=self.chatmodel,
-                tools=[search],
+                tools=[search, get_info_from_local_db],
                 system_prompt=self.SYSTEM_PROMPT,
                 checkpointer=checkpointer,
                 middleware=[trim_messages_agent],
@@ -183,6 +207,40 @@ def chat(query: str):
     master = Master()
     return master.run(query)
 
+@app.post('/add_user')
+def add_urls(url: str):
+    loader = WebBaseLoader(url)
+    docs = loader.load()
+    docments = RecursiveCharacterTextSplitter(
+        chunk_size=800, 
+        chunk_overlap=50
+    ).split_documents(docs)
+
+    # 引入向量数据库
+    qdrant = Qdrant.from_documents(
+        docments,
+        embedding=OpenAIEmbeddings(model="text-embedding-v3", check_embedding_ctx_length=False),
+        path="/home/cgm/model/SpaAgent/local_qdrant",
+        collection_name="SpaDocuments",
+    )
+    print("文档添加成功")
+    return {"ok": "添加成功"}
 
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
+    # embeddings_model = OpenAIEmbeddings(model="text-embedding-v3", check_embedding_ctx_length=False)
+    # embeddings = embeddings_model.embed_documents([
+    #     "Hi there!",
+    #     "Oh, hello!",
+    #     "What's your name?",
+    #     "My friends call me World",
+    #     "Hello World!"
+    # ])
+    # query = "什么是人工智能？"
+    # embedding = embeddings_model.embed_query(query)
+    # print(f"Query Embedding: {embedding}")
+
+
+
+
+# docker run -p 6333:6333 -p 6334:6334 -v "F:/qdrant-data:/qdrant/storage:z" qdrant/qdrant
