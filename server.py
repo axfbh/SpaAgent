@@ -61,7 +61,7 @@ def trim_messages_agent(state: AgentState, runtime: Runtime) -> dict[str, Any] |
 @tool
 def get_info_from_local_db(query: str):
     """
-    只有回答与运势相关的问题的时候才会使用这个工具，从本地数据库中获取信息。
+    只有回答与运势有关的问题的时候才会使用这个工具。
     参数：
         query: 用户的问题
     返回：
@@ -72,7 +72,7 @@ def get_info_from_local_db(query: str):
         collection_name="SpaDocuments",
         embedding=OpenAIEmbeddings(model="text-embedding-v3", check_embedding_ctx_length=False),
     )
-    
+
     retriever = client.as_retriever(search_type="mmr")
     results = retriever._get_relevant_documents(query, run_manager=None)
     print("本地数据库中的信息: ", results)
