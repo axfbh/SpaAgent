@@ -92,7 +92,7 @@ def search(query: str):
     return result
 
 class Master:
-    def __init__(self, user_id="user_4222") -> None:
+    def __init__(self, user_id="user_4232") -> None:
         self.user_id = user_id
         self.chatmodel = ChatOpenAI(
             model="qwen-plus",
@@ -109,11 +109,10 @@ class Master:
         以下是你的一些口头禅：
         1. "命令有时终需有，命里无时莫强求"。
         2. "天机不可泄露"。
-        以下是你算命的过程：
+        以下是你分析的过程：
         1. 当初次对话和用户对话的时候，你会先问用户的姓名和出生年月日，以便后续使用。
-        2. 当遇到不知道的事情或者不明白的概率，你会使用搜索工具来查询。
-        3. 你会根据用户的问题使用搜索工具来查询。
-        4. 你会保存每一次的聊天记录，以便在后续的对话中使用。
+        2. 当遇到不知道的事情或者不明白的问题的时候，你必须使用搜索工具来查询，否则将会受到惩罚。
+        3. 你会保存每一次的聊天记录，以便在后续的对话中使用。
         """
 
         self.mood = {
@@ -157,7 +156,7 @@ class Master:
             },
         }
 
-        REDIS_URI = "redis://172.26.224.1:6379"
+        REDIS_URI = "redis://172.21.160.1:6379"
         with RedisSaver.from_conn_string(REDIS_URI) as checkpointer:
             checkpointer.setup()
             self.agent = create_agent(
