@@ -3,28 +3,23 @@ from config.db import connection
 
 
 @tool
-def get_therapist_info_mysql(therapist_id: int=None):
+def get_db_table_info_mysql(sql_query: str):
     """
-    通过数据库therapists表，获取指定技师的信息，如果未指定技师工号，则获取所有技师的信息
+    通过数据库查询语句，执行数据库查询操作
 
     参数：
-        therapist_id: 技师工号，如果为None，则获取所有技师的信息
+        sql_query: 数据库查询语句
     返回：
-        result: 技师信息
+        result: 数据库查询结果
     """
-    print(f"获取技师信息，技师工号: {therapist_id}")
+    print(f"执行数据库查询语句: {sql_query}")
     with connection.cursor() as cursor:
-        if therapist_id:
-            sql = "SELECT * FROM `therapists` WHERE `therapist_id` = %s"
-            cursor.execute(sql, (therapist_id,))
-        else:
-            sql = "SELECT * FROM `therapists`"
-            cursor.execute(sql)
+        cursor.execute(sql_query)
         result = cursor.fetchall()
         return result
 
-
-def get_db_table_info(table_name: str):
+@tool
+def get_db_table_structure_mysql(table_name: str):
     """
     通过数据库获取指定表格结构信息
 
