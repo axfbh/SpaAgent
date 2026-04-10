@@ -2,13 +2,66 @@ from langchain.tools import tool
 from langchain_openai import ChatOpenAI, OpenAI
 from langchain.chat_models import init_chat_model
 from langchain_qwq import ChatQwen
+from langchain_core.prompts import ChatPromptTemplate
+from langchain.agents import create_agent
 
 from utils.db_tools import get_db_table_info_mysql, get_db_table_structure_mysql
 
+
+
 @tool
-def call_agent1(query: str):
+def call_agent1(query: str, table_name: str):
     """"
-    调用agent1，执行数据库增删、改、查操作
+    编写数据库增删、改、查的SQL语句。
+
+    参数：
+        query: 需要做的事情
+    返回：
+        result: 数据库增删、改、查代码
+    """
+
+    AGENT2_SYSTEM_PROMPT = """
+    你是一个专业的数据库增删、改、查的SQL语句编写agent。
+
+    数据库背景信息：
+    1. 数据库类型 MySQL，需要使用 MySQL 语法编写 SQL 增删、改、查语句。
+
+    数据库表格结构：
+    1. 你需要根据工具获取的表格结构。
+
+    输出格式：
+    1. 你只需要返回SQL语句，不要有其他内容，否则将会受到惩罚。
+    """
+
+    model = ChatOpenAI(
+        model="qwen-plus",
+        temperature=0,
+        streaming=True
+    )
+
+    agent = create_agent(
+        model=model,
+        tools=[get_db_table_structure_mysql],
+        system_prompt=AGENT2_SYSTEM_PROMPT,
+    )
+    print(f"agent1需要做什么：{query}, 根据表格：{table_name}")
+
+    result = agent.invoke(
+        {"messages":
+            [
+                {"role": "user", "content": query + ', 根据表格：' + table_name},
+            ]
+        }
+    )
+
+    return result['messages'][-1].content
+
+
+
+@tool
+def call_agent2(query: str):
+    """"
+    执行数据库增删、改、查的SQL语句
     参数：
         query: 数据库查询语句
     返回：
@@ -19,72 +72,36 @@ def call_agent1(query: str):
     AGENT1_SYSTEM_PROMPT = """
     你是一个专业的数据库查询agent。
 
-    你负责执行增删、改、查数据库表的功能。
+    你负责使用工具 执行增删、改、查数据库表的功能。
+
+    工具：
+    1. get_db_table_info_mysql。
     
     注意：
     不要生成其他信息，也不要提问，只返回数据库返回的信息，否则将会受到惩罚。
     """
 
-    model = ChatQwen(
+    model = ChatOpenAI(
         model="qwen-plus",
         temperature=0,
-        streaming=False
+        streaming=True
     )
 
-    model.bind_tools([get_db_table_info_mysql])
+    agent = create_agent(
+        model=model,
+        tools=[get_db_table_info_mysql],
+        system_prompt=AGENT1_SYSTEM_PROMPT,
+    )
 
-    result = model.invoke(
-        {"messages": 
+    print(f"agent2需要做什么：{query}")
+
+    result = agent.invoke(
+        {"messages":
             [
-                {"role": "system", "content": AGENT1_SYSTEM_PROMPT},
-                {"role": "user", "content": query}
+                {"role": "user", "content": query},
             ]
         }
     )
 
-    return result["messages"][-1].content
-
-
-
-@tool
-def call_agent2(query: str):
-    """"
-    调用agent2，编写数据库增删、改、查的代码
-
-    参数：
-        query: 需要编写的数据库代码，需要的相关信息
-    返回：
-        result: 数据库增删、改、查代码
-    """
-
-    AGENT2_SYSTEM_PROMPT = """
-    你是一个专业的数据库增删、改、查代码编写agent。
-
-    你负责编写数据库增删、改、查代码（绝对不允许、编写删除数据库）。首先，
-    
-    具体步骤：
-    1. 你需要根据表格名称，获取表格结构信息
-    2. 根据表格结构信息，编写数据库增删、改、查代码
-    
-    注意：
-    不要生成其他信息，也不要提问，只返回数据库返回的信息，否则将会受到惩罚。
-    """
-
-    model = ChatQwen(
-        model="qwen-plus",
-        temperature=0,
-        streaming=False
-    )
-
-    model.bind_tools([get_db_table_structure_mysql])
-
-    result = model.invoke(
-        {"messages": 
-            [
-                {"role": "system", "content": AGENT2_SYSTEM_PROMPT},
-                {"role": "user", "content": query}
-            ]
-        }
-    )
-
-    return result["messages"][-1].content
+    print(f"agent2返回的结果：{result['messages'][-1].content}")
+    return result['messages'][-1].content

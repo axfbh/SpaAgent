@@ -12,4 +12,4 @@ connection = pymysql.connect(host='localhost',
 #         sql = "SELECT * FROM `therapists`"
 #         cursor.execute(sql)
 #         result = cursor.fetchall()
-#         # print(result)
+#         print(result)
