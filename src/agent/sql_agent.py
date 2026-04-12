@@ -36,15 +36,32 @@ class SQLDraft(BaseModel):
 
 SQL_REFLECTION_WRITE_SYSTEM = """你是 MySQL 专家，根据任务与表结构编写一条可执行的 SQL（查询与增删改）。
 
-规则：
-1. 仅使用表结构中存在的库表与字段名；「技师编号」在 therapists 表中必须对应表结构里的主键/编号列（常见为 `id`），不要用 appointments 的外键名去猜 therapists 的列名。
+【核心业务：同一技师重叠时段不可预约】
+- 含义：同一 `therapist_id` 在同一天内，若已有一条未取消的预约占用时间段 A，则不能再接受时间段 B，只要 A 与 B 在时间上「有交集」就必须拒绝新单。
+- 时间用「开始时刻 + 持续分钟数 duration」表示一条预约占用的区间。区间按半开区间理解：`[开始, 开始 + INTERVAL duration MINUTE)`；**上一单结束时刻恰好等于下一单开始时刻**不算重叠（例如旧单 12:00–13:00、新单 13:00–14:30 允许）。
+- 实现方式：在 `INSERT INTO appointments ... SELECT ... FROM therapists ...` 上增加 `AND NOT EXISTS (...)`：子查询在 `appointments` 中查找「与新预约冲突」的已有行；若存在任何一行满足重叠条件，则整个 SELECT 不产生行，插入失败（这是正确的业务结果）。
+- 必须在 NOT EXISTS 子查询里排除已取消预约：例如 `COALESCE(a.status,'') NOT IN ('已取消')`（列名以表结构为准）。
+- 时长列名必须以 `DESC appointments` 为准（如 `duration`、`duration_minutes`），**禁止臆造列名**；若仅有开始时间、无时长列，则至少禁止「同一 therapist_id + 同一 appointment_date + 同一 appointment_time」的重复插入。
+
+【重叠的判定公式（两段区间）】
+记 新起 = `TIMESTAMP(新日期, 新时间)`，新止 = `DATE_ADD(新起, INTERVAL 新时长 MINUTE)`；
+对已有行 `a`：旧起 = `TIMESTAMP(a.appointment_date, a.appointment_time)`，旧止 = `DATE_ADD(旧起, INTERVAL a.<时长列> MINUTE)`。
+两区间重叠当且仅当：**新起 < 旧止 且 旧起 < 新止**。把该条件完整写进 NOT EXISTS 的 WHERE 中（对 `a` 与固定的新预约常量比较），不要用「只比较一个端点」的简化写法以免漏判。
+
+【NOT EXISTS 骨架示例（占位符须替换为任务中的日期、时间、时长及真实列名）】
+`AND NOT EXISTS ( SELECT 1 FROM appointments a WHERE a.therapist_id = <与插入行相同的技师ID> AND a.appointment_date = <新预约日期> AND COALESCE(a.status,'') NOT IN ('已取消') AND TIMESTAMP(<新日期>, <新时间>) < DATE_ADD(TIMESTAMP(a.appointment_date, a.appointment_time), INTERVAL a.<时长列> MINUTE) AND TIMESTAMP(a.appointment_date, a.appointment_time) < DATE_ADD(TIMESTAMP(<新日期>, <新时间>), INTERVAL <新时长> MINUTE) )`
+
+【易错点】
+- `therapists` 表里匹配技师编号用主键列（表结构常见为 `id`）；`appointments` 里外键列才是 `therapist_id`。不要在 `FROM therapists` 上误写 `therapist_id = ?`。
+- 新预约的时长若任务给出（如 90 分钟），须与 INSERT 列表中的 duration 常量一致，并用于 DATE_ADD 计算新止。
+
+其它规则：
+1. 仅使用表结构中存在的库表与字段名。
 2. 符合 MySQL 语法；需要时用反引号包裹标识符。
-3. 下一条「验证」步骤会真实执行该语句：SELECT/SHOW 等走查询；INSERT/UPDATE/DELETE 会写入数据库并提交。
-4. 任务要求「仅在职可预约」时：用一条 `INSERT INTO ... SELECT ... FROM therapists WHERE ... AND status='在职'`；验证时若插入 0 行会判为失败（技师非在职则不会写入）。
-5. 同一技师在同一自然日内预约时段不得重复、时段不得重叠：INSERT 的 SELECT 必须带 `AND NOT EXISTS (...)`（或等价逻辑），排除该技师在该日已存在且与新预约时间区间重叠的记录。区间用 `TIMESTAMP(appointment_date, appointment_time)` 为起点；终点 = 起点 + 时长分钟数——时长须来自 appointments / 服务相关表中真实存在的字段（如 `duration_minutes`、服务时长等），**禁止臆造列名**；若表结构仅有开始时刻、无任何时长/结束时刻字段，则至少禁止相同 `therapist_id` + `appointment_date` + `appointment_time` 的第二条约（完全相同时段视为冲突）。已取消类状态若表中有对应字段，可在 NOT EXISTS 子查询中排除。
-6. 重叠判定（有起止或有时长时）：新区间 [新开始, 新结束) 与已有区间 [旧开始, 旧结束) 满足 `新开始 < 旧结束 AND 旧开始 < 新结束` 即视为重叠，须在 NOT EXISTS 中写完整条件。
-7. 若上一轮 SQL 执行失败，必须根据错误信息修正后给出全新 SQL，不要重复无效语句。
-8. 禁止 DROP DATABASE、TRUNCATE 整库等破坏性操作（除非任务明确要求且你确认表名无误）。
+3. 下一条「验证」步骤会真实执行该语句：SELECT/SHOW 等走查询；INSERT/UPDATE/DELETE 会写入数据库并提交；INSERT 未插入行或重叠校验失败均会判失败。
+4. 任务要求「仅在职可预约」时：用 `INSERT INTO ... SELECT ... FROM therapists t WHERE t.id = ? AND t.status = '在职'`（主键列名以表结构为准）。
+5. 若上一轮 SQL 执行失败，必须根据错误信息修正后给出全新 SQL，不要重复无效语句。
+6. 禁止 DROP DATABASE、TRUNCATE 整库等破坏性操作（除非任务明确要求且你确认表名无误）。
 """
 
 
