@@ -203,7 +203,8 @@ def get_earliest_available_therapist(
         horizon_days: 从搜索起点日期起向后最多看多少天（默认 7）
         work_start_hour / work_end_hour: 每日营业开始/结束整点（默认 9–22），结束时刻前须能完整排下整段服务
     返回：
-        可读字符串：最早可上钟的技师与时间点；若无则说明原因
+        可读字符串：最早可上钟的技师与时间点；若无则说明原因（已排满、无在职技师等）。
+        上层应答时须直接引用本工具结果；未调用本工具前不得向顾客编造可约时间。
     """
     print(
         "get_earliest_available_therapist: "
